@@ -1,0 +1,105 @@
+---
+title: "OilGas"
+output: html_document
+---
+
+
+## Libraries 
+
+```{r}
+library(tidyverse)
+library(rstatix)
+library(leaps)
+```
+
+
+## Import the Dataset 
+
+```{r}
+SWIW_data <- read_csv("Oil&GasWells.csv")
+SWIW_df <- SWIW_data[sample(nrow(SWIW_data), 0.10 * nrow(SWIW_data)), ]
+```
+
+
+## Data Scrubbing and Transformation (Cleaning)
+
+```{r}
+SWIW_df_clean <- SWIW_df %>% mutate(across(ends_with("Date") | starts_with("Well_Date"), as.Date, format = "%m/%d/%Y")) %>% mutate(across(c(County, `Well Type`, `Well Status`), ~trimws(toupper(.)))) %>%
+mutate(across(c(County, `Well Type`, `Well Status`), as.factor)) %>% mutate(year_approved = lubridate::year(Well_Date_Approved), years_active = as.numeric(difftime(Sys.Date(), Well_Date_Complete, units = "days")) / 365)
+
+SWIW_df_clean <- janitor::clean_names(SWIW_df_clean)
+DT::datatable(SWIW_df_clean)
+```
+
+
+
+## EDA 
+
+```{r}
+head(SWIW_df_clean)
+```
+
+```{r}
+library(maps)
+
+data_points <- data.frame(
+  lon = SWIW_df$`Well Longitude`,  
+  lat = SWIW_df$`Well Latitude`,
+  county = SWIW_df$County 
+)
+
+# Get map data for Ohio counties
+ohio_counties <- map_data("county") %>%
+  filter(region == "ohio")
+
+ggplot() +
+  geom_polygon(
+    data = ohio_counties,
+    aes(x = long, y = lat, group = group),
+    fill = "gray95", color = "black", linewidth = 0.3
+  ) +
+  geom_point(
+    data = data_points,
+    aes(x = lon, y = lat),
+    color = "#0072B2", alpha = 0.7, size = 2
+  ) +
+  coord_fixed(1.3) +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Coordinates by County in Ohio",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme(
+    legend.position = "none",        # remove legend
+    panel.grid = element_blank(),    # remove gridlines
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    axis.text = element_text(color = "black")
+  )
+```
+
+The following map gives the well locations across Ohio counties in term of longitude, latitude coordinates. The way that this can be used is to compare to other maps that give insight into the disposal issue. For example, a map of wells that go out of commission can be overlaid to see which regions are affected the most by flooding. 
+
+```{r}
+
+# Numerical Summary Statistics 
+
+Well_Stats_Count <-  SWIW_df_clean %>% count(well_status, sort = TRUE) %>%
+  mutate(Percent = round(100 * n / sum(n), 2))
+print(Well_Stats_Count)
+
+## Note: Colorcode wells onto map to triganulate which wells are "plugged and abandonded" in Ohio. 
+
+SWIW_df_clean %>%
+  group_by(well_status) %>%
+  get_summary_stats(
+    vars = c("elevation", "du_acres", "well_ip_gas", "well_ip_oil", "well_total_depth"),
+    type = "full"
+  )
+
+SWIW_df_clean %>%
+  get_summary_stats(
+    vars = c("elevation", "du_acres", "well_ip_gas", "well_ip_oil", "well_total_depth"),
+    type = "full"
+  )
+```
+
