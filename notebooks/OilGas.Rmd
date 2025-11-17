@@ -10,13 +10,16 @@ output: html_document
 library(tidyverse)
 library(rstatix)
 library(leaps)
+library(janitor)
+library(dplyr)
+library(stringr)
 ```
 
 
 ## Import the Dataset 
 
 ```{r}
-SWIW_data <- read_csv("Oil&GasWells.csv")
+SWIW_data <- read_csv("../data/Oil&GasWells.csv")
 SWIW_df <- SWIW_data[sample(nrow(SWIW_data), 0.10 * nrow(SWIW_data)), ]
 ```
 
@@ -31,6 +34,44 @@ SWIW_df_clean <- janitor::clean_names(SWIW_df_clean)
 DT::datatable(SWIW_df_clean)
 ```
 
+```{r}
+# normalized well_id for join across ODNR files
+normalize_well_id <- function(x) {
+  x %>%
+    as.character() %>%
+    str_trim() %>%
+    str_to_upper() %>%
+    str_replace_all("[^A-Z0-9]", "")
+}
+
+SWIW_df_clean <- SWIW_df_clean %>%
+  mutate(
+    well_id = normalize_well_id(permit_number_api)
+  )
+
+
+# Handle missing fields for key numeric variables
+key_numeric <- c("elevation", "td_md", "du_acres")
+
+existing_numeric <- intersect(names(SWIW_df_clean), key_numeric)
+
+SWIW_df_clean <- SWIW_df_clean %>%
+  group_by(county) %>%
+  mutate(
+    across(
+      all_of(existing_numeric),
+      ~ ifelse(is.na(.), median(., na.rm = TRUE), .)
+    )
+  ) %>%
+  ungroup()
+
+# ODNR units (feet to meters), same original columns
+SWIW_df_clean <- SWIW_df_clean %>%
+  mutate(
+    elevation_m = if ("elevation" %in% names(.)) elevation * 0.3048 else NA_real_,
+    td_md_m     = if ("td_md" %in% names(.))     td_md     * 0.3048 else NA_real_
+  )
+```
 
 
 ## EDA 
